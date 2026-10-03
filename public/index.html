@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f6f7f4" />
+    <meta name="description" content="Whisper · 私人的多模型聊天与任务工作台" />
+    <title>Whisper</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='3' y='3' width='58' height='58' rx='20' fill='%23278968'/%3E%3Cpath d='M22 16h20l4 25-14 8-14-8z' fill='%23eff9de'/%3E%3Cpath d='M24 23h16M32 15v35' stroke='%23278968' stroke-width='3'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" type="module"></script>
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <nav class="rail" aria-label="主导航">
+        <a class="brand-mark" href="/" aria-label="Whisper 首页"><svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M14 8h12l4 19-10 6-10-6 4-19Z" fill="currentColor"/><path d="M15 15h10m-5-6v23" stroke="#f3f9e6" stroke-width="2.5" stroke-linecap="round"/></svg></a>
+        <div class="rail-actions">
+          <button class="rail-button selected" id="nav-chats" title="消息" aria-label="消息" aria-current="page"></button>
+          <button class="rail-button" id="nav-tasks" title="任务" aria-label="任务"></button>
+          <button class="rail-button" id="nav-devices" title="设备" aria-label="设备"></button>
+        </div>
+        <div class="rail-bottom">
+          <button class="rail-button" id="nav-audit" title="操作记录" aria-label="操作记录"></button>
+          <button class="rail-button" id="nav-settings" title="连接与设置" aria-label="连接与设置"></button>
+          <button class="profile-button" id="profile-button" title="个人连接" aria-label="打开个人连接">我</button>
+        </div>
+      </nav>
+
+      <aside class="conversation-sidebar" aria-label="会话列表">
+        <div class="sidebar-heading"><div><span class="eyebrow">Whisper</span><h1>Whisper<span class="brand-dot"></span></h1></div><button class="icon-button add-conversation" id="new-conversation" title="发起聊天" aria-label="发起聊天"></button></div>
+        <label class="search-field"><span id="search-icon" aria-hidden="true"></span><input id="conversation-search" type="search" placeholder="搜索会话" autocomplete="off" aria-label="搜索会话" /><kbd>⌘ K</kbd></label>
+        <div class="sidebar-section-heading"><span>最近会话</span><button class="text-button" id="new-group">新建群聊</button></div>
+        <div class="conversation-list" id="conversation-list"><div class="loading-copy">正在打开你的空间…</div></div>
+        <button class="connection-card" id="connection-card"><span class="connection-card-icon" id="connection-icon"></span><span class="connection-card-copy"><strong id="connection-title">连接你的 ChatGPT</strong><small id="connection-description">使用订阅计划的可用额度</small></span><span id="connection-arrow"></span></button>
+        <div class="sidebar-footer"><span class="status-dot" id="server-status-dot"></span><span id="server-status">正在连接本地服务</span><span>个人空间</span></div>
+      </aside>
+
+      <main class="chat-main">
+        <header class="chat-header">
+          <button class="icon-button mobile-back" id="mobile-back" aria-label="返回会话列表"></button>
+          <div class="avatar header-avatar" id="chat-avatar"></div>
+          <div class="chat-heading"><h2 id="chat-title">你的聊天空间</h2><p id="chat-subtitle">从一句话开始</p></div>
+          <div class="header-actions"><span class="mode-badge" id="chat-mode-badge">演示模式</span><button class="icon-button" id="chat-details" title="会话成员" aria-label="会话成员"></button><span class="header-divider"></span><button class="icon-button" id="toggle-tasks" title="打开任务进展" aria-label="打开任务进展" aria-expanded="true" aria-controls="task-panel"></button></div>
+        </header>
+        <div class="chat-scroll" id="chat-scroll" tabindex="0" aria-label="聊天内容">
+          <div class="messages" id="messages" role="log" aria-live="polite" aria-relevant="additions text"></div>
+        </div>
+        <div class="composer-area">
+          <div class="composer-context"><span id="composer-context"></span><button class="text-button" id="composer-task">发起一个任务 <span aria-hidden="true">↗</span></button></div>
+          <div id="composer-plan-usage" class="hidden"></div>
+          <form class="composer" id="message-form">
+            <label class="sr-only" for="message-input">输入消息</label><textarea id="message-input" rows="2" placeholder="把想法写下来…" maxlength="16000"></textarea>
+            <div class="composer-bottom"><span class="composer-hint">Enter 发送 · Shift + Enter 换行</span><button type="button" class="stop-button hidden" id="cancel-message"></button><button type="submit" class="send-button" id="send-message" aria-label="发送消息" disabled></button></div>
+          </form>
+          <p class="composer-footnote" id="composer-footnote">演示回复由本地测试适配器生成，不会消耗模型额度。</p>
+        </div>
+      </main>
+
+      <aside class="task-panel" id="task-panel" aria-label="任务进展">
+        <div class="task-panel-heading"><div><span class="eyebrow">WORK TOGETHER</span><h2>任务进展</h2></div><button class="icon-button" id="close-tasks" aria-label="收起任务进展"></button></div>
+        <div class="task-panel-body" id="task-panel-body"></div>
+        <div class="task-panel-footer"><span id="shield-icon"></span><span>关键操作，由你决定</span></div>
+      </aside>
+    </div>
+    <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+    <dialog id="app-dialog" class="app-dialog"><div id="dialog-content"></div></dialog>
+    <noscript><div class="noscript">请启用 JavaScript，以使用 Whisper。</div></noscript>
+  </body>
+</html>

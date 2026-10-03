@@ -1,0 +1,19 @@
+{
+  "name": "whisper",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent Android AI chats and a supervised local desktop companion",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "dev": "node --watch server/index.mjs",
+    "test": "node --test test/*.test.mjs",
+    "build:keychain": "node scripts/build-keychain.mjs",
+    "build:files": "node scripts/build-files.mjs",
+    "check:codex": "node scripts/check-codex.mjs",
+    "check": "node --check server/index.mjs && node --check public/app.js"
+  }
+}

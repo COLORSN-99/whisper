@@ -1,0 +1,12 @@
+whisper Android third-party components
+
+OkHttp 4.12.0 — Copyright Square, Inc. — Apache License 2.0
+https://repo.maven.apache.org/maven2/com/squareup/okhttp3/okhttp/4.12.0/okhttp-4.12.0.pom
+
+Okio 3.6.0 — Copyright Square, Inc. — Apache License 2.0
+https://repo.maven.apache.org/maven2/com/squareup/okio/okio/3.6.0/okio-3.6.0.pom
+
+Kotlin standard library — Copyright JetBrains s.r.o. and Kotlin contributors — Apache License 2.0
+https://kotlinlang.org/
+
+See APACHE-2.0.txt in these assets for the license text.

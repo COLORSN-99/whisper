@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="chat_list" type="id" />
+    <item name="new_chat" type="id" />
+    <item name="new_chat_title" type="id" />
+    <item name="settings" type="id" />
+    <item name="chat_title" type="id" />
+    <item name="back" type="id" />
+    <item name="member_settings" type="id" />
+    <item name="member_list" type="id" />
+    <item name="add_member" type="id" />
+    <item name="member_name" type="id" />
+    <item name="member_provider" type="id" />
+    <item name="member_model" type="id" />
+    <item name="messages" type="id" />
+    <item name="message_input" type="id" />
+    <item name="send_message" type="id" />
+    <item name="stop_generation" type="id" />
+    <item name="generation_status" type="id" />
+    <item name="provider_add" type="id" />
+    <item name="provider_name" type="id" />
+    <item name="provider_endpoint" type="id" />
+    <item name="provider_models" type="id" />
+    <item name="provider_secret" type="id" />
+    <item name="save_credential" type="id" />
+    <item name="restore_credential" type="id" />
+    <item name="storage_notice" type="id" />
+</resources>
