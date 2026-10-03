@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Whisper" parent="Base.Theme.Whisper">
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:navigationBarColor">#F6F5EE</item>
+    </style>
+</resources>

@@ -2,7 +2,7 @@
 
 像聊天一样，与不同模型交流。支持独立运行的 Android 应用，以及本机 Mac 聊天与受监督文件任务。
 
-[下载 Android APK](https://github.com/COLORSN-99/whisper/releases) · [Android 构建说明](docs/android-build.md) · [桌面版说明](docs/desktop.md)
+[下载 Android APK](https://github.com/COLORSN-99/whisper/releases/download/v0.2.0/whisper-v0.2.0-android.apk) · [Android 构建说明](docs/android-build.md) · [桌面版说明](docs/desktop.md)
 
 ## Android
 
@@ -50,7 +50,7 @@ Android 使用 Java 17、Gradle 8.13、AGP 8.13.2；进入 `android/` 后可运�
 ./gradlew connectedDebugAndroidTest
 ```
 
-发布前在本机执行桌面回归、Android 单元测试、Lint 和隔离模拟器测试。仓库附有可选 GitHub Actions 模板；当前 GitHub 授权缺少 workflow 权限，模板尚未启用。APK 在维护者本机用专用长期签名完成，并附带校验文件。[测试范围](docs/android-testing.md) · [签名与发布](docs/android-build.md)
+发布前在本机执行桌面回归、Android 单元测试、Lint 和隔离模拟器测试。仓库附有可选 GitHub Actions 模板；当前 GitHub 授权缺少 workflow 权限，模板尚未启用。APK 在维护者本机用专用长期签名完成，并附带校验文件。[验证结果](docs/validation.md) · [测试范围](docs/android-testing.md) · [签名与发布](docs/android-build.md)
 
 | 路径 | 内容 |
 | --- | --- |

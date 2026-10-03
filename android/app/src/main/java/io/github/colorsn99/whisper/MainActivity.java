@@ -1,5 +1,6 @@
 package io.github.colorsn99.whisper;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
@@ -104,7 +105,12 @@ public final class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         if (Build.VERSION.SDK_INT >= 30) getWindow().setDecorFitsSystemWindows(false);
-        else getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR);
+        else {
+            int systemUi = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+            // The API 26 base theme keeps a dark navigation bar with light icons.
+            if (Build.VERSION.SDK_INT >= 27) systemUi |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            getWindow().getDecorView().setSystemUiVisibility(systemUi);
+        }
         localStore = new LocalStore(this);
         synchronized (MainActivity.class) {
             if (processCredentials == null) processCredentials = new CredentialStore(getApplicationContext());
@@ -696,6 +702,9 @@ public final class MainActivity extends Activity {
         if (generating) stopGeneration("已停止"); saveState(); destroyed = true; main.removeCallbacksAndMessages(null); client.close(); super.onDestroy();
     }
     private void navigateBack() { if (!"home".equals(page)) { rememberDraft(); hideKeyboard(); showHome(); saveState(); } else finish(); }
+    // API 33+ uses the native OnBackInvokedDispatcher registered in onCreate.
+    // Keep this method only for API 26-32; modern gestures do not depend on it.
+    @SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed() { navigateBack(); }
 
     private void scrollToBottom(boolean force) {

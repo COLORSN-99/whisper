@@ -141,9 +141,17 @@ public final class WhisperInstrumentedTest {
         requireId("settings").click();
         requireId("provider_add").click();
         requireId("provider_name");
-        new UiScrollable(new UiSelector().scrollable(true)).scrollIntoView(
-                new UiSelector().resourceId(context.getPackageName() + ":id/save_credential"));
-        UiObject2 persist = requireId("save_credential");
+        UiObject2 persist = device.findObject(By.res(context.getPackageName(), "save_credential"));
+        // On a taller display the entire form fits and Android correctly exposes
+        // no scrollable node. Scroll only when the checkbox is not already visible.
+        if (persist == null || persist.getVisibleBounds().isEmpty()) {
+            UiScrollable form = new UiScrollable(new UiSelector().scrollable(true));
+            assertTrue("An off-screen persistence checkbox requires a scrollable form", form.exists());
+            assertTrue("The persistence checkbox can be scrolled into view", form.scrollIntoView(
+                    new UiSelector().resourceId(context.getPackageName() + ":id/save_credential")));
+            persist = requireId("save_credential");
+        }
+        assertFalse("The persistence checkbox must be visible", persist.getVisibleBounds().isEmpty());
         assertTrue("Persistence is an explicit checkbox", persist.isCheckable());
         assertFalse("Opening provider setup must default to memory-only", persist.isChecked());
     }
