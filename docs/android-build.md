@@ -26,4 +26,4 @@ APK 使用专用长期 PKCS#12 签名。私钥和密码仅保存在维护者本�
 
 ## 移动端 OAuth 范围
 
-当前未集成 ChatGPT Android OAuth。已查阅的官方开源应用方案描述 loopback 回调和桌面示例，不能据此宣称 Android 回调已受支持。后续确认官方移动注册与回调契约后再接入；不会复用已有 ChatGPT/Codex 登录、Dear 身份或私人工具权限。[官方注册流程](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
+v0.3.0 实现 Chrome 外部浏览器、手机 `127.0.0.1` 临时回调、PKCE、签名验证、Android Keystore 可选保存及 Responses 订阅聊天。实现依照官方本地／开源应用协议；官方桌面示例本身不证明移动设备上的真实授权一定成功。没有访问 ChatGPT 私有接口或复用现有账号会话。测试和实际验收边界见 [Android OAuth](android-oauth.md)。

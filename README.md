@@ -2,7 +2,7 @@
 
 像聊天一样，与不同模型交流。支持独立运行的 Android 应用，以及本机 Mac 聊天与受监督文件任务。
 
-[下载 Android APK](https://github.com/COLORSN-99/whisper/releases/download/v0.2.0/whisper-v0.2.0-android.apk) · [Android 构建说明](docs/android-build.md) · [桌面版说明](docs/desktop.md)
+[下载 Android APK](https://github.com/COLORSN-99/whisper/releases/download/v0.3.0/whisper-v0.3.0-android.apk) · [Android 构建说明](docs/android-build.md) · [桌面版说明](docs/desktop.md)
 
 ## Android
 
@@ -10,10 +10,11 @@
 
 - **私聊与群聊**：每位成员绑定自己的供应商和模型；支持流式回复、停止生成和本地会话记录。
 - **离线开始**：内置明确标识的演示角色，不联网、不消耗模型额度，也不声称在手机运行了本地大模型。
+- **ChatGPT 登录**：设置 → 通过 Chrome 登录 ChatGPT → 官方页面授权 → 切回 whisper → 读取可用模型；在聊天的「成员」中选择 ChatGPT 和模型。发送前确认使用订阅额度。
 - **其他厂商**：用户显式配置支持 OpenAI-compatible Chat Completions 的公开 HTTPS API、模型和自己的凭据。原生 Anthropic/Gemini 协议不自动等于兼容协议。
 - **凭据控制**：默认只保留在内存；保存到手机需单独勾选，并由 Android Keystore 加密保护。恢复已保存凭据也需要明确确认。
 
-Android 的 ChatGPT 登录尚未接入；不会要求用 OpenAI API key 代替，不会继承现有 ChatGPT 对话、记忆或 Dear 身份。远程电脑配对和手机控制仍在后续范围，本版不申请无障碍、录屏、设备管理员或共享存储权限。
+Android 已实现官方协议的浏览器授权、回调和订阅聊天接入。Chrome 本地回调与离线模拟授权已验证，真实 OpenAI 账号授权和实际额度仍待用户验收；不会要求用 OpenAI API key 代替，也不会继承现有 ChatGPT 对话、记忆或 Dear 身份。[登录说明与边界](docs/android-oauth.md)。远程电脑配对和手机控制仍在后续范围，本版不申请无障碍、录屏、设备管理员或共享存储权限。
 
 这是早期预览版。真实厂商调用会使用其账户额度；开发测试不使用真实账户或模型。
 

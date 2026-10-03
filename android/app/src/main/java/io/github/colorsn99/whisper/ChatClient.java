@@ -42,7 +42,7 @@ import okio.BufferedSink;
  * One cancellable third-party chat-completions stream at a time.
  * This class owns its background executor. All listener callbacks are on that
  * executor; an Activity must marshal UI changes with runOnUiThread().
- * No ChatGPT OAuth, OpenAI Platform key fallback, tools, redirects, or retries.
+ * ChatGPT uses a separate verified OAuth session and Responses protocol. No API-key fallback, tools, redirects, or retries.
  */
 public final class ChatClient implements AutoCloseable {
     private static final int MAX_REQUEST_BYTES = 1024 * 1024;
@@ -177,7 +177,7 @@ public final class ChatClient implements AutoCloseable {
         if (host.equals("openai.com") || host.endsWith(".openai.com")
                 || host.equals("chatgpt.com") || host.endsWith(".chatgpt.com")
                 || host.equals("openai.azure.com") || host.endsWith(".openai.azure.com"))
-            throw new IllegalArgumentException("Android 版尚未接入 ChatGPT OAuth，不能用 OpenAI API key 替代。请配置其他厂商。");
+            throw new IllegalArgumentException("ChatGPT 请使用设置中的官方登录，不能用 OpenAI API key 替代。此处仅配置其他厂商。");
         String path = input.getRawPath();
         if (path == null || path.isEmpty()) path = "/v1";
         if (path.contains("%") || path.contains("\\") || path.contains("//") || !Objects.equals(input.normalize().getRawPath(), input.getRawPath()))
@@ -235,9 +235,34 @@ public final class ChatClient implements AutoCloseable {
         return request;
     }
 
+    public synchronized Request streamChatGpt(ChatGptSession session, String model, JSONArray messages, Listener listener) {
+        if (closed || active != null) throw new IllegalStateException("已有请求或客户端已关闭。");
+        RunningRequest request = new RunningRequest(null, null, model, messages.toString(), listener);
+        request.session = session;
+        active = request;
+        executor.execute(request);
+        return request;
+    }
+
+    static byte[] responsesBody(String model, JSONArray source) throws Exception {
+        // Reuse strict message/model/size validation, then adapt to Responses input.
+        JSONObject validated = new JSONObject(new String(requestBody(model, source), StandardCharsets.UTF_8));
+        JSONArray input = new JSONArray();
+        StringBuilder instructions = new StringBuilder();
+        JSONArray messages = validated.getJSONArray("messages");
+        for (int i = 0; i < messages.length(); i++) {
+            JSONObject message = messages.getJSONObject(i);
+            if ("system".equals(message.getString("role"))) instructions.append(message.getString("content")).append('\n');
+            else input.put(message);
+        }
+        return new JSONObject().put("model", model).put("instructions", instructions.toString()).put("input", input)
+                .put("store", false).put("stream", true).toString().getBytes(StandardCharsets.UTF_8);
+    }
+
     private final class RunningRequest implements Request, Runnable {
         final String endpoint, model, messages;
         String secret;
+        ChatGptSession session;
         final Listener listener;
         final AtomicBoolean cancelled = new AtomicBoolean();
         final AtomicBoolean terminal = new AtomicBoolean();
@@ -255,13 +280,22 @@ public final class ChatClient implements AutoCloseable {
             try {
                 checkCancelled(cancelled);
                 String url;
-                try { url = validateEndpoint(endpoint); }
-                catch (IllegalArgumentException failure) { throw new SafeFailure(failure.getMessage()); }
-                if (secret == null || secret.length() < 1 || secret.length() > 8192 || !secret.matches("[\\x21-\\x7e]+"))
-                    throw new SafeFailure("请配置当前厂商的有效凭据；凭据不能包含空白或控制字符。");
-                if (secret.startsWith("sk-proj-") || secret.startsWith("sk-svcacct-"))
-                    throw new SafeFailure("此 Android 入口不接收 OpenAI Platform 密钥；ChatGPT OAuth 尚未接入。");
-                byte[] body = requestBody(model, new JSONArray(messages));
+                byte[] body;
+                if (session != null) {
+                    if (!session.hasModel(model)) throw new SafeFailure("请先读取并选择当前 ChatGPT 账号的可用模型。");
+                    secret = session.accessToken();
+                    checkCancelled(cancelled);
+                    url = OAuthProtocol.RESOURCE + "/responses";
+                    body = responsesBody(model, new JSONArray(messages));
+                } else {
+                    try { url = validateEndpoint(endpoint); }
+                    catch (IllegalArgumentException failure) { throw new SafeFailure(failure.getMessage()); }
+                    if (secret == null || secret.length() < 1 || secret.length() > 8192 || !secret.matches("[\\x21-\\x7e]+"))
+                        throw new SafeFailure("请配置当前厂商的有效凭据；凭据不能包含空白或控制字符。");
+                    if (secret.startsWith("sk-proj-") || secret.startsWith("sk-svcacct-"))
+                        throw new SafeFailure("此入口不接收 OpenAI Platform 密钥；请使用 ChatGPT 官方登录。");
+                    body = requestBody(model, new JSONArray(messages));
+                }
                 okhttp3.Request request = new okhttp3.Request.Builder().url(url)
                         .header("Authorization", "Bearer " + secret)
                         .header("Accept", "text/event-stream")
@@ -285,12 +319,12 @@ public final class ChatClient implements AutoCloseable {
                         catch (RuntimeException failure) { throw new SafeFailure("界面无法接收回复，已停止请求。"); }
                     }, System::nanoTime);
                     SecretRedactor redactor = new SecretRedactor(secret, batcher::accept);
-                    try { parseSse(responseBody.byteStream(), cancelled, redactor::accept); }
+                    try { parseSse(responseBody.byteStream(), cancelled, redactor::accept, session != null); }
                     finally { try { redactor.finish(); } finally { batcher.finish(); } }
                 }
                 checkCancelled(cancelled);
             } catch (SafeFailure failure) { problem = failure.getMessage(); }
-            catch (IOException | JSONException | RuntimeException failure) {
+            catch (Exception failure) {
                 problem = cancelled.get() ? "已停止生成；已收到的文字已保留。" : "连接或回复未完整结束；已收到的文字已保留，没有自动重试。";
             } finally {
                 secret = null;
@@ -317,6 +351,9 @@ public final class ChatClient implements AutoCloseable {
 
     /** SSE and chat-completions parser; never trusts EOF alone as successful completion. */
     static void parseSse(InputStream source, AtomicBoolean cancelled, DeltaSink sink) throws IOException {
+        parseSse(source, cancelled, sink, false);
+    }
+    static void parseSse(InputStream source, AtomicBoolean cancelled, DeltaSink sink, boolean responses) throws IOException {
         InputStream limited = new FilterInputStream(source) {
             int bytes;
             private void count(int n) throws IOException { bytes += n; if (bytes > MAX_STREAM_BYTES) throw new SafeFailure("回复数据超过本地限制，已停止。"); }
@@ -339,7 +376,7 @@ public final class ChatClient implements AutoCloseable {
             if (first) { first = false; if (line.startsWith("\uFEFF")) line = line.substring(1); }
             if (line.isEmpty()) {
                 if (data.length() > 0) {
-                    if (event(data.toString(), totals, sink)) return;
+                    if (responses ? responseEvent(data.toString(), totals, sink) : event(data.toString(), totals, sink)) return;
                     data.setLength(0);
                 }
             } else if (line.startsWith("data:")) {
@@ -367,6 +404,34 @@ public final class ChatClient implements AutoCloseable {
             line.append((char) value);
             if (line.length() > MAX_LINE_CHARS) throw new SafeFailure("模型事件行过长，已停止。");
         }
+    }
+
+    private static boolean responseEvent(String data, int[] totals, DeltaSink sink) throws IOException {
+        try {
+            validateJsonDepth(data);
+            JSONObject event = new JSONObject(data);
+            String type = event.getString("type");
+            if (type.equals("error") || type.equals("response.failed") || type.equals("response.incomplete"))
+                throw new SafeFailure("ChatGPT 未完成本次回复，请检查额度或调整输入；没有自动重试。");
+            if (type.equals("response.output_item.added")) {
+                String itemType = event.getJSONObject("item").optString("type");
+                if (!itemType.equals("message") && !itemType.equals("reasoning"))
+                    throw new SafeFailure("当前 ChatGPT 聊天不执行工具调用。");
+            }
+            if (type.equals("response.output_text.delta") || type.equals("response.refusal.delta")) {
+                String delta = event.getString("delta");
+                if (!wellFormed(delta)) throw new SafeFailure("ChatGPT 文本格式无效。");
+                totals[1] += delta.length();
+                if (totals[1] > MAX_TEXT_CHARS) throw new SafeFailure("回复文字超过本地限制，已停止。");
+                if (!delta.isEmpty()) sink.emit(delta);
+            }
+            if (type.equals("response.completed")) {
+                if (!"completed".equals(event.getJSONObject("response").optString("status")) || totals[1] == 0)
+                    throw new SafeFailure("ChatGPT 没有返回完整文字回复。");
+                return true;
+            }
+            return false;
+        } catch (JSONException failure) { throw new SafeFailure("ChatGPT 返回了无效的 Responses 事件。"); }
     }
 
     private static boolean event(String data, int[] totals, DeltaSink sink) throws IOException {

@@ -4,6 +4,9 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
+import android.content.Intent;
+import android.content.ActivityNotFoundException;
+import android.net.Uri;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -49,7 +52,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/** Native, device-local chat UI. No WebView, local server, or device-control permissions. */
+/** Native, device-local chat UI. No WebView or device-control permissions; login alone opens a temporary loopback callback. */
 public final class MainActivity extends Activity {
     private static final int CREAM = Color.rgb(246, 245, 238);
     private static final int PAPER = Color.rgb(255, 254, 249);
@@ -67,6 +70,16 @@ public final class MainActivity extends Activity {
     // precede the next instance's load. No Activity is retained by this executor.
     private static final ExecutorService disk = Executors.newSingleThreadExecutor();
     private static CredentialStore processCredentials;
+    private static ChatGptSession processChatGpt;
+    private ChatGptSession chatGpt;
+    private String displayedAuthStatus = "";
+    private final Runnable authPoll = new Runnable() {
+        @Override public void run() {
+            if (destroyed) return;
+            if (state != null && "settings".equals(page) && !authSummary().equals(displayedAuthStatus)) showSettings();
+            main.postDelayed(this, 800);
+        }
+    };
     private static final Set<String> updatingProviders = Collections.synchronizedSet(new HashSet<>());
     private final Map<String, TextView> messageViews = new HashMap<>();
     private final Map<String, TextView> messageStates = new HashMap<>();
@@ -115,6 +128,8 @@ public final class MainActivity extends Activity {
         synchronized (MainActivity.class) {
             if (processCredentials == null) processCredentials = new CredentialStore(getApplicationContext());
             credentials = processCredentials;
+            if (processChatGpt == null) processChatGpt = new ChatGptSession(getApplicationContext(), credentials);
+            chatGpt = processChatGpt;
         }
         client = new ChatClient();
         if (Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
@@ -137,6 +152,7 @@ public final class MainActivity extends Activity {
                 if (loadFailed) saveIssue = "未能读取本机记录。本次为临时体验，原记录不会被改写。";
                 selectedChatId = restoredChat.isEmpty() ? state.optString("selectedChatId") : restoredChat;
                 if ("chat".equals(restoredPage) && chat(selectedChatId) != null) showChat(selectedChatId);
+                else if ("settings".equals(restoredPage)) showSettings();
                 else showHome();
                 saveState();
             });
@@ -153,7 +169,7 @@ public final class MainActivity extends Activity {
                 "selectedChatId", source.optString("selectedChatId"));
         for (int i = 0; i < providers.length() && i < 20; i++) {
             JSONObject p = providers.optJSONObject(i);
-            if (p == null || p.optString("id").isEmpty() || DEMO.equals(p.optString("id"))) continue;
+            if (p == null || p.optString("id").isEmpty() || (DEMO.equals(p.optString("id")) || "chatgpt".equals(p.optString("id")))) continue;
             JSONArray models = p.optJSONArray("models");
             if (models == null || models.length() == 0) continue;
             array(clean, "providers").put(object("id", p.optString("id"), "name", p.optString("name"),
@@ -354,6 +370,14 @@ public final class MainActivity extends Activity {
         JSONArray members = array(c, "members");
         for (int i = 0; i < members.length(); i++) {
             JSONObject m = members.optJSONObject(i); if (DEMO.equals(m.optString("providerId"))) continue;
+            if ("chatgpt".equals(m.optString("providerId"))) {
+                if (!chatGpt.connected || !chatGpt.hasModel(m.optString("model"))) {
+                    new AlertDialog.Builder(this).setTitle("连接 ChatGPT").setMessage("请先在设置登录，并读取账号可用的模型。")
+                            .setNegativeButton("取消", null).setPositiveButton("前往设置", (d, w) -> showSettings()).show(); return;
+                }
+                destinations.add(m.optString("name") + " · ChatGPT 订阅用量\nhttps://api.openai.com/v1/responses\n模型：" + m.optString("model"));
+                continue;
+            }
             if (updatingProviders.contains(m.optString("providerId"))) { toast("连接配置正在保存，请稍后发送。"); return; }
             JSONObject p = provider(m.optString("providerId"));
             if (p == null || credentials.get(m.optString("providerId")) == null) {
@@ -364,7 +388,7 @@ public final class MainActivity extends Activity {
         }
         if (destinations.isEmpty()) beginSend(c, content);
         else new AlertDialog.Builder(this).setTitle("发送到实际 API？")
-                .setMessage(String.join("\n\n", destinations) + "\n\n本次消息及当前聊天上下文将发送给以上厂商。群聊中前一位成员的回复也会发送给下一位。实际调用可能计费；停止不能撤回已发送的内容或已产生的费用。")
+                .setMessage(String.join("\n\n", destinations) + "\n\n本次消息及当前聊天上下文将发送给以上厂商。群聊中前一位成员的回复也会发送给下一位。ChatGPT 调用会消耗获准的订阅用量，其他厂商可能计费；停止不能撤回已发送的内容或已产生的用量。")
                 .setNegativeButton("取消", null).setPositiveButton("确认发送", (d, w) -> beginSend(c, content)).show();
     }
 
@@ -388,10 +412,10 @@ public final class MainActivity extends Activity {
         if (DEMO.equals(m.optString("providerId"))) streamDemo(m, expected);
         else {
             JSONObject p = provider(m.optString("providerId")); String secret = credentials.get(m.optString("providerId"));
-            if (p == null || secret == null) { failGeneration("这位成员的凭据不可用，请在设置中重新提供。"); return; }
+            if (!"chatgpt".equals(m.optString("providerId")) && (p == null || secret == null)) { failGeneration("这位成员的凭据不可用，请在设置中重新提供。"); return; }
             JSONArray context = contextFor(m);
             try {
-                request = client.stream(p.optString("endpoint"), secret, m.optString("model"), context, new ChatClient.Listener() {
+                ChatClient.Listener listener = new ChatClient.Listener() {
                     @Override public void onDelta(String text) { runOnUiThread(() -> { if (isCurrent(expected)) appendDelta(text); }); }
                     @Override public void onComplete() { runOnUiThread(() -> {
                         if (hasGeneration(expected)) { if (stopping) finishGeneration(stopReason); else completeMember(expected); }
@@ -399,7 +423,10 @@ public final class MainActivity extends Activity {
                     @Override public void onError(String message) { runOnUiThread(() -> {
                         if (hasGeneration(expected)) { if (stopping) finishGeneration(stopReason); else failGeneration(message); }
                     }); }
-                });
+                };
+                request = "chatgpt".equals(m.optString("providerId"))
+                        ? client.streamChatGpt(chatGpt, m.optString("model"), context, listener)
+                        : client.stream(p.optString("endpoint"), secret, m.optString("model"), context, listener);
             } catch (RuntimeException unavailable) { failGeneration("暂时无法启动请求，请稍后重试。"); }
         }
     }
@@ -516,6 +543,7 @@ public final class MainActivity extends Activity {
         LinearLayout form = form();
         EditText name = input("成员昵称", R.id.member_name, false); name.setFilters(new InputFilter[]{new InputFilter.LengthFilter(30)}); name.setText(existing == null ? "新成员" : existing.optString("name")); form.addView(label("昵称", 12, MUTED)); form.addView(name);
         List<String> providerIds = new ArrayList<>(); List<String> providerNames = new ArrayList<>(); providerIds.add(DEMO); providerNames.add("离线演示（无需联网）");
+        providerIds.add("chatgpt"); providerNames.add("ChatGPT（官方登录）");
         JSONArray providers = array(state, "providers");
         for (int i = 0; i < providers.length(); i++) { JSONObject p = providers.optJSONObject(i); providerIds.add(p.optString("id")); providerNames.add(p.optString("name")); }
         Spinner providerChoice = new Spinner(this); providerChoice.setId(R.id.member_provider); providerChoice.setContentDescription("成员厂商");
@@ -535,7 +563,7 @@ public final class MainActivity extends Activity {
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         });
         if (existing != null) { int selected = providerIds.indexOf(existing.optString("providerId")); providerChoice.setSelection(Math.max(0, selected)); }
-        form.addView(note("真实 API 需要先在设置提供凭据。Android 的 ChatGPT 登录尚未接入；此处不接受 OpenAI API 密钥作为替代。"));
+        form.addView(note("真实 API 需要先在设置提供凭据。ChatGPT 请先登录并读取可用模型，再选择模型。"));
         AlertDialog.Builder builder = new AlertDialog.Builder(this).setTitle(existing == null ? "添加成员" : "编辑成员").setView(scroll(form)).setNegativeButton("取消", (d, w) -> showMembers(c)).setPositiveButton("保存", null);
         if (existing != null && c.optBoolean("group") && array(c, "members").length() > 2) builder.setNeutralButton("移除", (d, w) -> { removeObject(array(c, "members"), existing.optString("id")); saveState(); showChat(c.optString("id")); showMembers(c); });
         AlertDialog dialog = builder.create(); dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
@@ -543,6 +571,7 @@ public final class MainActivity extends Activity {
             if (title.isEmpty()) { name.setError("请填写昵称"); return; }
             if (!validModel(selectedModel)) { model.setError("请填写有效的模型名称（不能含空白）"); return; }
             if (DEMO.equals(pid) && !selectedModel.equals("demo-gentle") && !selectedModel.equals("demo-spark")) { model.setError("演示模型请选择 demo-gentle 或 demo-spark"); return; }
+            if ("chatgpt".equals(pid) && (!chatGpt.connected || !chatGpt.hasModel(selectedModel))) { model.setError("请先在设置登录 ChatGPT 并读取可用模型"); return; }
             JSONObject m = existing == null ? member(title, selectedModel) : existing; put(m, "name", title); put(m, "providerId", pid); put(m, "model", selectedModel); if (existing == null) array(c, "members").put(m);
             saveState(); dialog.dismiss(); showChat(c.optString("id")); showMembers(c);
         })); dialog.show();
@@ -551,6 +580,7 @@ public final class MainActivity extends Activity {
     private void showSettings() {
         rememberDraft(); hideKeyboard(); page = "settings"; shell(); toolbar("设置", "连接由你决定，凭据由你保管", true);
         LinearLayout form = form();
+        addChatGptSettings(form);
         form.addView(section("模型连接"));
         form.addView(note("离线演示始终可用，不会联网，也不会产生模型费用。添加连接不会自动发起真实调用。"));
         Button add = button("＋ 添加兼容厂商", R.id.provider_add, true); add.setOnClickListener(v -> { if (array(state, "providers").length() >= 20) toast("最多添加 20 个厂商连接。"); else showProviderEditor(null); }); form.addView(add, fill());
@@ -564,10 +594,74 @@ public final class MainActivity extends Activity {
             Button key = button("凭据", View.NO_ID, false); key.setContentDescription(p.optString("name") + " 凭据"); key.setOnClickListener(v -> showCredentialDialog(p)); actions.addView(key); card.addView(actions);
             LinearLayout.LayoutParams margin = fill(); margin.topMargin = dp(14); form.addView(card, margin);
         }
-        form.addView(section("ChatGPT")); form.addView(note("Android 官方登录尚未接入。这里不会使用 OpenAI API 密钥、已有 Codex 登录或桌面会话来替代授权。"));
         form.addView(section("设备与隐私")); form.addView(note("聊天记录保留在本机。手动凭据默认只在本次应用进程的内存中；只有单独勾选才会加密保存，重启后还需要单独同意恢复。\n\n本应用只申请网络权限，不申请无障碍、悬浮窗或文件管理权限。远程电脑、手机控制和跨设备同步尚未接入。"));
-        form.addView(note("whisper 0.2.0 · 原生 Android")); root.addView(scroll(form), new LinearLayout.LayoutParams(-1, 0, 1));
+        form.addView(note("whisper 0.3.0 · 原生 Android")); root.addView(scroll(form), new LinearLayout.LayoutParams(-1, 0, 1));
     }
+
+    private String authSummary() { return chatGpt.status + ":" + chatGpt.busy + ":" + chatGpt.connected; }
+
+    private void addChatGptSettings(LinearLayout form) {
+        displayedAuthStatus = authSummary();
+        form.addView(section("ChatGPT"));
+        TextView status = note(chatGpt.status); status.setId(R.id.chatgpt_status); form.addView(status);
+        form.addView(note("通过 Chrome 打开 OpenAI 官方授权页。订阅资格、额度和模型以账号实际授权为准；不会导入 ChatGPT 历史、记忆或 Dear 身份。"));
+        if (!chatGpt.connected && !chatGpt.busy) {
+            Button login = button("通过 Chrome 登录 ChatGPT", R.id.chatgpt_login, true);
+            login.setOnClickListener(v -> showChatGptConsent()); form.addView(login, fill());
+            if (chatGpt.hasSaved()) {
+                Button restore = button("恢复已保存的 ChatGPT 登录", R.id.chatgpt_restore, false);
+                restore.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("恢复 ChatGPT 登录？")
+                        .setMessage("读取 whisper 在这台设备加密保存的会话，并联系 OpenAI 续期。不会发送聊天消息。")
+                        .setNegativeButton("取消", null).setPositiveButton("同意恢复", (d, w) -> chatGpt.execute(() -> chatGpt.restore(true))).show());
+                form.addView(restore, fill());
+            }
+        }
+        if (chatGpt.authorizing) {
+            Button cancel = button("取消本次登录", R.id.chatgpt_cancel, false);
+            cancel.setOnClickListener(v -> { chatGpt.cancel(); showSettings(); }); form.addView(cancel, fill());
+        }
+        if (chatGpt.connected) {
+            Button models = button("读取可用模型", R.id.chatgpt_models, true); models.setEnabled(!chatGpt.busy);
+            models.setOnClickListener(v -> chatGpt.execute(chatGpt::loadModels)); form.addView(models, fill());
+            if (chatGpt.models.length() > 0) form.addView(note("可用模型：" + join(chatGpt.models) + "\n在聊天的「成员」中选择 ChatGPT 和模型即可使用。"));
+        }
+        if (chatGpt.connected || chatGpt.hasSaved()) {
+            Button logout = button("退出并清除 ChatGPT 登录", R.id.chatgpt_logout, false); logout.setEnabled(!chatGpt.busy);
+            logout.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle("退出 ChatGPT？")
+                    .setMessage("停止本机使用并清除保存的登录，尝试撤销当前会话。若尚未恢复保存的会话，仅清除本机记录；请在 ChatGPT 设置中断开远程授权。")
+                    .setNegativeButton("取消", null).setPositiveButton("退出并清除", (d, w) -> chatGpt.execute(chatGpt::logout)).show());
+            form.addView(logout, fill());
+        }
+    }
+
+    private void showChatGptConsent() {
+        if (chatGpt.hasSaved()) { toast("请先恢复或清除已保存的 ChatGPT 登录。"); return; }
+        LinearLayout form = form();
+        form.addView(note("将在 Chrome 的 auth.openai.com 页面登录并请求使用 ChatGPT 订阅额度。授权后请切回 whisper 查看结果；发送聊天前还会确认一次。"));
+        CheckBox persist = new CheckBox(this); persist.setId(R.id.chatgpt_persist); persist.setText("在这台设备加密保存登录（下次恢复仍需同意）"); persist.setChecked(false); form.addView(persist);
+        new AlertDialog.Builder(this).setTitle("登录 ChatGPT").setView(form).setNegativeButton("取消", null)
+                .setPositiveButton("打开 Chrome", (d, w) -> {
+                    final boolean save = persist.isChecked();
+                    chatGpt.execute(() -> {
+                        try {
+                            String url = chatGpt.begin(true, save);
+                            runOnUiThread(() -> {
+                                if (destroyed) { chatGpt.cancel(); return; }
+                                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE);
+                                try { startActivity(intent.setPackage("com.android.chrome")); }
+                                catch (ActivityNotFoundException | SecurityException missing) {
+                                    try { startActivity(intent.setPackage(null)); toast("未安装 Chrome，已打开系统浏览器。"); }
+                                    catch (ActivityNotFoundException | SecurityException unavailable) { chatGpt.cancel(); toast("请先安装 Chrome 或其他浏览器。"); }
+                                }
+                                showSettings();
+                            });
+                        } catch (Exception failure) { chatGpt.cancel(); runOnUiThread(() -> { if (!destroyed) toast("无法开始登录，请检查本机网络或先清除已有登录。"); }); }
+                    });
+                }).show();
+    }
+
+    @Override protected void onResume() { super.onResume(); main.removeCallbacks(authPoll); main.post(authPoll); }
+    @Override protected void onPause() { main.removeCallbacks(authPoll); super.onPause(); }
 
     private void showProviderEditor(JSONObject existing) {
         if (!storageAvailable) { toast("本机记录暂时不可用，无法保存新连接。"); return; }
@@ -678,7 +772,10 @@ public final class MainActivity extends Activity {
     private String chatMode(JSONObject c) { for (int i = 0; i < array(c, "members").length(); i++) if (!DEMO.equals(array(c, "members").optJSONObject(i).optString("providerId"))) return "含实际 API · 可能计费"; return "离线演示"; }
     private String providerName(String providerId) { if (DEMO.equals(providerId)) return "离线演示"; JSONObject p = provider(providerId); return p == null ? "未配置厂商" : p.optString("name"); }
     private JSONObject chat(String chatId) { return find(array(state, "chats"), chatId); }
-    private JSONObject provider(String providerId) { return find(array(state, "providers"), providerId); }
+    private JSONObject provider(String providerId) {
+        if ("chatgpt".equals(providerId)) return object("id", "chatgpt", "name", "ChatGPT", "models", chatGpt.models, "endpoint", OAuthProtocol.RESOURCE + "/responses");
+        return find(array(state, "providers"), providerId);
+    }
     private JSONObject find(JSONArray items, String identity) { for (int i = 0; i < items.length(); i++) { JSONObject item = items.optJSONObject(i); if (item != null && item.optString("id").equals(identity)) return item; } return null; }
     private void removeObject(JSONArray items, String identity) { for (int i = 0; i < items.length(); i++) if (items.optJSONObject(i).optString("id").equals(identity)) { items.remove(i); return; } }
     private void rememberDraft() { if (composer != null && state != null && "chat".equals(page)) { JSONObject c = chat(selectedChatId); if (c != null) put(c, "draft", composer.getText().toString()); } }

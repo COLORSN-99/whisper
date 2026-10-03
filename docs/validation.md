@@ -1,3 +1,26 @@
+# v0.3.0 验证记录
+
+2026-10-04，本机独立项目与专用 Android 35 / ARM64 模拟器完成。没有使用真实账号、授权码、令牌或模型请求，没有连接实体手机。
+
+| 检查 | 结果 |
+| --- | --- |
+| 桌面语法与 Node.js 回归 | 125 / 125 通过 |
+| Android JVM 单元测试 | 57 / 57 通过；Debug 与 Release 均验证 |
+| Android Debug / Release Lint | 0 个错误 |
+| Android 35 / ARM64 仪器测试 | 10 / 10 通过，`OK (10 tests)` |
+| Chrome → 手机 loopback 回调 | 合成 state/code 到达；浏览器显示返回应用提示 |
+| Release 签名 | 与 v0.2.0 使用同一证书，apksigner 验证通过 |
+
+新增 13 项 JVM 测试覆盖官方授权协议、PKCE、临时 RSA 签名与账户绑定、scope 不足、错误 state、取消竞态、保存恢复、续期失败不重试、模型目录和 Responses 流。原有聊天与存储测试保持通过。
+
+新增 3 项仪器测试覆盖登录默认不保存、取消与 Activity 重建、手机回调校验、真实 Chrome 访问合成回调。Chrome 首次启动的账号／通知／地区搜索提示起初遮挡测试页面；测试现在选择无账号、拒绝通知并保留原搜索设置，保留完整页面与回调断言。全部 10 项最终用相同 AndroidJUnitRunner 在专用模拟器内执行通过。
+
+APK 只申请网络权限，禁用备份、明文 HTTP 客户端流量和 Release 调试；登录回调的本地 ServerSocket 只在用户开始登录后临时创建。签名私钥仍留在本机，没有上传 GitHub Secrets。
+
+真实 OpenAI 授权和模型响应、实体 Android 设备，以及 Android 26 上的运行仍未验证。Chrome 能访问本地回调和离线协议通过，不能替代真实账号资格验收。使用步骤与失败边界见 [Android OAuth](android-oauth.md)。
+
+---
+
 # v0.2.0 验证记录
 
 2026-10-03，在独立项目目录完成；未连接真实手机，未使用真实模型凭据或调用计费 API。

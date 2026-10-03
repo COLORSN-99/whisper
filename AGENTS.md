@@ -10,5 +10,5 @@ Keep all work in this independent project. Do not inspect other projects or exis
 - Bind only to loopback. Preserve Host/Origin/CSRF protection. No raw remote execution endpoints.
 - Default tokens are in memory. Persistent storage and restoration require separate explicit UI consent.
 - Computer actions require per-task approval; unknown approval requests fail closed. Android and remote pairing remain unimplemented until an explicit authorized scope exists.
-- Android ChatGPT OAuth is not yet integrated. Never imply desktop OAuth support also proves support for an Android redirect, and never substitute an OpenAI API key. Other vendors can be configured explicitly by the user.
+- Android ChatGPT OAuth implements the official local-app protocol with Chrome and an ephemeral IPv4 loopback callback. Offline and emulator tests do not prove live OpenAI authorization or subscription eligibility. Never substitute an OpenAI API key. Other vendors can be configured explicitly by the user.
 - Never log tokens, OAuth codes, authorization URLs, or secret-bearing command environments.

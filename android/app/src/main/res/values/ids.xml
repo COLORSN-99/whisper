@@ -25,4 +25,11 @@
     <item name="save_credential" type="id" />
     <item name="restore_credential" type="id" />
     <item name="storage_notice" type="id" />
+    <item name="chatgpt_status" type="id" />
+    <item name="chatgpt_login" type="id" />
+    <item name="chatgpt_persist" type="id" />
+    <item name="chatgpt_restore" type="id" />
+    <item name="chatgpt_cancel" type="id" />
+    <item name="chatgpt_models" type="id" />
+    <item name="chatgpt_logout" type="id" />
 </resources>

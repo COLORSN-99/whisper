@@ -11,6 +11,8 @@ the native UI through UiAutomator 2.3.0.
 
 ## Scope
 
+- Verify the ChatGPT consent dialog starts unchecked, cancellation keeps the app signed out, and Activity recreation preserves the settings page.
+- Exercise the Android loopback listener with wrong and valid synthetic state values; separately open Chrome to a synthetic local callback and require the credential-free return page. No official authorization page is opened.
 - Launch the default local conversations without configuring a Mac or provider.
 - Send and stop a local demo reply from a private conversation.
 - Inspect group members, read the uniquely identified group message through a

@@ -156,6 +156,77 @@ public final class WhisperInstrumentedTest {
         assertFalse("Opening provider setup must default to memory-only", persist.isChecked());
     }
 
+    @Test public void chatGptLoginRequiresConsentAndDefaultsToMemory() {
+        launchApp(); captureScreenshot = false;
+        requireId("settings").click(); requireId("chatgpt_login").click();
+        UiObject2 persist = requireId("chatgpt_persist");
+        assertTrue(persist.isCheckable()); assertFalse(persist.isChecked());
+        requireText("取消").click();
+        assertTrue(requireId("chatgpt_status").getText().contains("尚未登录"));
+        scenario.recreate();
+        assertTrue(requireId("chatgpt_status").getText().contains("尚未登录"));
+        assertTrue(requireId("chatgpt_login").isEnabled());
+    }
+
+    @Test public void androidLoopbackRejectsWrongStateAndClosesAfterValidCallback() throws Exception {
+        java.util.concurrent.CountDownLatch accepted = new java.util.concurrent.CountDownLatch(1);
+        try (OAuthLoopback listener = new OAuthLoopback()) {
+            listener.listen(values -> {
+                if (!"instrumentation-fake-state".equals(values.get("state"))) return false;
+                accepted.countDown(); return true;
+            }, () -> {});
+            java.net.URI uri = new java.net.URI(listener.redirect());
+            assertTrue(localCallback(uri, "wrong").contains("400 Bad Request"));
+            assertTrue(localCallback(uri, "instrumentation-fake-state").contains("200 OK"));
+            assertTrue(accepted.await(3, java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
+    @Test public void chromeReachesPhoneLoopbackWithOnlySyntheticCallbackData() throws Exception {
+        java.util.concurrent.CountDownLatch accepted = new java.util.concurrent.CountDownLatch(1);
+        try (OAuthLoopback listener = new OAuthLoopback()) {
+            listener.listen(values -> {
+                if (!"chrome-instrumentation-fake-state".equals(values.get("state"))) return false;
+                accepted.countDown(); return true;
+            }, () -> {});
+            String url = listener.redirect() + "?state=chrome-instrumentation-fake-state&code=instrumentation-fake-code";
+            context.startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                    .setPackage("com.android.chrome").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+            // A fresh test AVD can show Chrome first-run. Never add a Google account.
+            long deadline = SystemClock.uptimeMillis() + 15000;
+            while (accepted.getCount() > 0 && SystemClock.uptimeMillis() < deadline) {
+                UiObject2 noAccount = device.findObject(By.res("com.android.chrome", "signin_fre_dismiss_button"));
+                if (noAccount != null) {
+                    try { noAccount.click(); }
+                    catch (androidx.test.uiautomator.StaleObjectException changed) { /* Re-query within the bounded wait. */ }
+                }
+                SystemClock.sleep(100);
+            }
+            assertTrue("Chrome must reach the phone's IPv4 loopback callback", accepted.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            // Fresh Chrome may stack notification and regional search prompts over
+            // the loaded page. Decline optional changes; never sign in or search.
+            long visibleDeadline = SystemClock.uptimeMillis() + UI_TIMEOUT_MS;
+            while (!device.hasObject(By.textContains("请切回 whisper")) && SystemClock.uptimeMillis() < visibleDeadline) {
+                try {
+                    UiObject2 notifications = device.findObject(By.res("com.android.chrome", "negative_button").text("No thanks"));
+                    if (notifications != null) notifications.click();
+                    UiObject2 keepSearch = device.findObject(By.res("com.android.chrome", "button_secondary").text("Keep Google"));
+                    if (keepSearch != null) keepSearch.click();
+                } catch (androidx.test.uiautomator.StaleObjectException changed) { /* Re-query after transition. */ }
+                SystemClock.sleep(100);
+            }
+            assertTrue("The browser receives a credential-free return instruction", device.hasObject(By.textContains("请切回 whisper")));
+        } finally { device.pressHome(); }
+    }
+
+    private String localCallback(java.net.URI uri, String state) throws Exception {
+        try (java.net.Socket socket = new java.net.Socket("127.0.0.1", uri.getPort())) {
+            socket.setSoTimeout(3000);
+            socket.getOutputStream().write(("GET /auth/callback?state=" + state + "&code=instrumentation-fake-code HTTP/1.1\r\nHost: 127.0.0.1:" + uri.getPort() + "\r\n\r\n").getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            return new String(LocalStore.readBounded(socket.getInputStream(), 16384), java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
+
     @Test public void memoryOnlyCredentialsDoNotSurviveAStoreRestart() throws Exception {
         String id = uniqueId("memory");
         String secret = "instrumentation_fake_memory_" + UUID.randomUUID();
